@@ -40,6 +40,7 @@ Agrega aquí capturas de pantalla, logs de pruebas, resultados de CI, etc.
 - [ ]  Base de datos
 - [ ]  Infraestructura / Devops
 - [ ]  UI / Frontend
+- [ ]  App móvil
 - [ ]  Otros: ____________
 
 ## ✅ Checklist
