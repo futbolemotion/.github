@@ -1,0 +1,83 @@
+# .github/workflows/trigger_merge_all_repos.yml
+name: 💿 Trigger Merge Main to Pre-Prod for All Repos
+
+on:
+  workflow_dispatch:
+    inputs:
+      repos_to_update:
+        description: 'Comma-separated list of specific repositories to update (e.g., repo-a,repo-b). Leave empty for all listed below.'
+        required: false
+        default: ''
+      skip_confirmation:
+        description: 'Check to skip manual confirmation for large operations. Use with caution!'
+        type: boolean
+        default: false
+
+jobs:
+  define_and_trigger_merges:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Define All Repositories
+      id: all_repos_list
+      run: |
+        # Lista de todos los repositorios de tu organización
+        # Asegúrate de que los nombres de los repositorios estén en formato "organizacion/nombre-del-repo"
+        ALL_ORG_REPOS=(
+          "futbolemotion/superadmin"
+          
+          # ... (Añade aquí los 38 repositorios de la organización Sports Emotion, uno por línea)
+          
+        )
+
+        REPOS_TO_PROCESS=""
+        if [ -n "${{ github.event.inputs.repos_to_update }}" ]; then
+          IFS=',' read -ra SELECTED_INPUT_REPOS <<< "${{ github.event.inputs.repos_to_update }}"
+          for selected_repo_short_name in "${SELECTED_INPUT_REPOS[@]}"; do
+            REPO_MATCH_FOUND=false
+            for full_repo_name in "${ALL_ORG_REPOS[@]}"; do
+              if [[ "$full_repo_name" == *"/${selected_repo_short_name}" ]]; then # Matches by short name
+                REPOS_TO_PROCESS="$REPOS_TO_PROCESS $full_repo_name"
+                REPO_MATCH_FOUND=true
+                break
+              fi
+            done
+            if [ "$REPO_MATCH_FOUND" = false ]; then
+              echo "::warning::Repository '$selected_repo_short_name' not found in the predefined list. Skipping."
+            fi
+          done
+        else
+          REPOS_TO_PROCESS="${ALL_ORG_REPOS[*]}"
+        fi
+        
+        echo "repos_to_process=$REPOS_TO_PROCESS" >> $GITHUB_OUTPUT
+      shell: bash
+
+    - name: Confirm Operation (if not skipped)
+      if: github.event.inputs.skip_confirmation == false
+      run: |
+        echo "You are about to merge 'main' into 'pre_prod' for the following repositories:"
+        for repo in ${{ steps.all_repos_list.outputs.repos_to_process }}; do
+          echo "- $repo"
+        done
+        echo ""
+        echo "To proceed, you must manually approve this step."
+        echo "If you want to skip this confirmation for future runs, check 'Skip confirmation' when triggering."
+        exit 1 # This will cause the workflow to fail unless manually approved in the UI
+      shell: bash
+
+  # Este job se crea dinámicamente para cada repositorio
+  trigger_merge_for_each_repo:
+    needs: [define_and_trigger_merges] # Depende del job que define la lista de repos
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        repository: ${{ fromJson(format('["{0}"]', join(split(needs.define_and_trigger_merges.outputs.repos_to_process, ' '), '","'))) }}
+    name: Merging ${{ matrix.repository }}
+    uses: futbolemotion/.github/.github/workflows/merge_main_to_pre_prod_reusable.yml # Referencia al workflow reusable
+    with:
+      target_repo: ${{ matrix.repository }}
+      source_branch: 'main'
+      target_branch: 'pre_prod'
+    secrets:
+      ORG_REPO_UPDATE_PAT: ${{ secrets.ORG_REPO_UPDATE_PAT }} # Pasa el secreto de la organización
