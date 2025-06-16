@@ -1,5 +1,5 @@
 # .github/workflows/trigger_merge_all_repos.yml
-name: 💿 Trigger Merge Main to Pre-Prod for All Repos
+name: Trigger Merge Main to Pre-Prod for All Repos
 
 on:
   workflow_dispatch:
@@ -16,6 +16,8 @@ on:
 jobs:
   define_and_trigger_merges:
     runs-on: ubuntu-latest
+    outputs:
+      repos_json: ${{ steps.all_repos_list.outputs.repos_json }} # Exponer la salida JSON
 
     steps:
     - name: Define All Repositories
@@ -25,19 +27,16 @@ jobs:
         # Asegúrate de que los nombres de los repositorios estén en formato "organizacion/nombre-del-repo"
         ALL_ORG_REPOS=(
           "futbolemotion/superadmin"
-          
-          # ... (Añade aquí los 38 repositorios de la organización Sports Emotion, uno por línea)
-          
         )
 
-        REPOS_TO_PROCESS=""
+        REPOS_ARRAY=()
         if [ -n "${{ github.event.inputs.repos_to_update }}" ]; then
           IFS=',' read -ra SELECTED_INPUT_REPOS <<< "${{ github.event.inputs.repos_to_update }}"
           for selected_repo_short_name in "${SELECTED_INPUT_REPOS[@]}"; do
             REPO_MATCH_FOUND=false
             for full_repo_name in "${ALL_ORG_REPOS[@]}"; do
               if [[ "$full_repo_name" == *"/${selected_repo_short_name}" ]]; then # Matches by short name
-                REPOS_TO_PROCESS="$REPOS_TO_PROCESS $full_repo_name"
+                REPOS_ARRAY+=("$full_repo_name")
                 REPO_MATCH_FOUND=true
                 break
               fi
@@ -47,19 +46,23 @@ jobs:
             fi
           done
         else
-          REPOS_TO_PROCESS="${ALL_ORG_REPOS[*]}"
+          REPOS_ARRAY=("${ALL_ORG_REPOS[@]}")
         fi
         
-        echo "repos_to_process=$REPOS_TO_PROCESS" >> $GITHUB_OUTPUT
+        # Convertir el array de bash a un string JSON válido
+        # Utilizamos jq para un manejo robusto de JSON. Aseguramos que la salida sea un array JSON.
+        JSON_REPOS=$(printf '%s\n' "${REPOS_ARRAY[@]}" | jq -R . | jq -s .)
+        
+        echo "repos_json=$JSON_REPOS" >> $GITHUB_OUTPUT
+        echo "::notice::Repositories to process: $JSON_REPOS" # Log para depuración
       shell: bash
 
     - name: Confirm Operation (if not skipped)
       if: github.event.inputs.skip_confirmation == false
       run: |
+        # Usamos jq para pretty-print el JSON para la confirmación
         echo "You are about to merge 'main' into 'pre_prod' for the following repositories:"
-        for repo in ${{ steps.all_repos_list.outputs.repos_to_process }}; do
-          echo "- $repo"
-        done
+        echo "${{ steps.all_repos_list.outputs.repos_json }}" | jq -r '.[] | "- " + .'
         echo ""
         echo "To proceed, you must manually approve this step."
         echo "If you want to skip this confirmation for future runs, check 'Skip confirmation' when triggering."
@@ -72,9 +75,10 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        repository: ${{ fromJson(format('["{0}"]', join(split(needs.define_and_trigger_merges.outputs.repos_to_process, ' '), '","'))) }}
+        # Ahora, repos_json ya es un array JSON válido, podemos usar fromJson directamente.
+        repository: ${{ fromJson(needs.define_and_trigger_merges.outputs.repos_json) }}
     name: Merging ${{ matrix.repository }}
-    uses: ./.github/workflows/merge-main-to-pre-prod-reusable.yml # Referencia al workflow reusable
+    uses: ./.github/workflows/merge_main_to_pre_prod_reusable.yml # Referencia al workflow reusable
     with:
       target_repo: ${{ matrix.repository }}
       source_branch: 'main'
