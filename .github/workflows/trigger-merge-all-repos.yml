@@ -74,7 +74,7 @@ jobs:
       matrix:
         repository: ${{ fromJson(format('["{0}"]', join(split(needs.define_and_trigger_merges.outputs.repos_to_process, ' '), '","'))) }}
     name: Merging ${{ matrix.repository }}
-    uses: futbolemotion/.github/workflows/merge-main-to-pre-prod-reusable.yml # Referencia al workflow reusable
+    uses: ./.github/workflows/merge-main-to-pre-prod-reusable.yml # Referencia al workflow reusable
     with:
       target_repo: ${{ matrix.repository }}
       source_branch: 'main'
