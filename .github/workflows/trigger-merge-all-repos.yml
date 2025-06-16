@@ -78,7 +78,7 @@ jobs:
         # Ahora, repos_json ya es un array JSON válido, podemos usar fromJson directamente.
         repository: ${{ fromJson(needs.define_and_trigger_merges.outputs.repos_json) }}
     name: Merging ${{ matrix.repository }}
-    uses: .github/workflows/merge-main-to-pre-prod-reusable.yml # Referencia al workflow reusable
+    uses: /.github/workflows/merge-main-to-pre-prod-reusable.yml # Referencia al workflow reusable
     with:
       target_repo: ${{ matrix.repository }}
       source_branch: 'main'
