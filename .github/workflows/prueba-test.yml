@@ -1,4 +1,4 @@
-name: Daily Merge main -> pre_prod
+name: 🧐 Daily Merge main -> pre_prod
 
 on:
   schedule:
