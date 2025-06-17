@@ -49,6 +49,16 @@ jobs:
           fi
 
           printf "%s\n" "${REPOS_ARRAY[@]}" > repos_to_merge.txt
+          
+      - name: Clone Target Repository
+        run: |
+          echo "Cloning ${{ steps.repo_vars.outputs.REPO_FULL_NAME }}..."
+          if ! git clone --no-single-branch "https://oauth2:${{ env.GITHUB_TOKEN }}@github.com/${{ steps.repo_vars.outputs.REPO_FULL_NAME }}.git" "${{ steps.repo_vars.outputs.REPO_NAME }}"; then
+            echo "::error::Failed to clone ${{ steps.repo_vars.outputs.REPO_FULL_NAME }}. Check token permissions or repo existence."
+            exit 1
+          fi
+          cd "${{ steps.repo_vars.outputs.REPO_NAME }}"
+        shell: bash
 
       - name: Confirm Operation (if not skipped)
         if: github.event_name == 'workflow_dispatch' && github.event.inputs.skip_confirmation == 'false'
