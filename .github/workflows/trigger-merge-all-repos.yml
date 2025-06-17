@@ -2,8 +2,8 @@
 name: 💿 Trigger Merge Main to Pre-Prod for All Repos
 
 on:
-  # schedule:
-  #   - cron: '0 8 * * *' # Todos los días a las 8am UTC
+  schedule:
+    - cron: '0 8 * * *' # Todos los días a las 8am UTC
   workflow_dispatch:
     inputs:
       repos_to_update:
@@ -16,75 +16,78 @@ on:
         default: false
 
 jobs:
-  define_and_trigger_merges:
+  merge_all_repos:
     runs-on: ubuntu-latest
-    outputs:
-      repos_json: ${{ steps.all_repos_list.outputs.repos_json }} # Exponer la salida JSON
-
     steps:
-    - name: Define All Repositories
-      id: all_repos_list
-      run: |
-        # Lista de todos los repositorios de tu organización
-        # Asegúrate de que los nombres de los repositorios estén en formato "organizacion/nombre-del-repo"
-        ALL_ORG_REPOS=(
-          "futbolemotion/superadmin"
-          # Agrega aquí los otros 37 repositorios, uno por línea
-        )
+      - name: Define All Repositories
+        id: all_repos_list
+        run: |
+          ALL_ORG_REPOS=(
+            "futbolemotion/superadmin"
+            # Agrega aquí los otros 37 repositorios, uno por línea
+          )
 
-        REPOS_ARRAY=()
-        if [ -n "${{ github.event.inputs.repos_to_update }}" ]; then
-          IFS=',' read -ra SELECTED_INPUT_REPOS <<< "${{ github.event.inputs.repos_to_update }}"
-          for selected_repo_short_name in "${SELECTED_INPUT_REPOS[@]}"; do
-            REPO_MATCH_FOUND=false
-            for full_repo_name in "${ALL_ORG_REPOS[@]}"; do
-              if [[ "$full_repo_name" == *"/${selected_repo_short_name}" ]]; then # Matches by short name
-                REPOS_ARRAY+=("$full_repo_name")
-                REPO_MATCH_FOUND=true
-                break
+          REPOS_ARRAY=()
+          if [ -n "${{ github.event.inputs.repos_to_update }}" ]; then
+            IFS=',' read -ra SELECTED_INPUT_REPOS <<< "${{ github.event.inputs.repos_to_update }}"
+            for selected_repo_short_name in "${SELECTED_INPUT_REPOS[@]}"; do
+              REPO_MATCH_FOUND=false
+              for full_repo_name in "${ALL_ORG_REPOS[@]}"; do
+                if [[ "$full_repo_name" == *"/${selected_repo_short_name}" ]]; then
+                  REPOS_ARRAY+=("$full_repo_name")
+                  REPO_MATCH_FOUND=true
+                  break
+                fi
+              done
+              if [ "$REPO_MATCH_FOUND" = false ]; then
+                echo "::warning::Repository '$selected_repo_short_name' not found in the predefined list. Skipping."
               fi
             done
-            if [ "$REPO_MATCH_FOUND" = false ]; then
-              echo "::warning::Repository '$selected_repo_short_name' not found in the predefined list. Skipping."
+          else
+            REPOS_ARRAY=("${ALL_ORG_REPOS[@]}")
+          fi
+
+          printf "%s\n" "${REPOS_ARRAY[@]}" > repos_to_merge.txt
+
+      - name: Confirm Operation (if not skipped)
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.skip_confirmation == 'false'
+        run: |
+          echo "You are about to merge 'main' into 'pre_prod' for the following repositories:"
+          cat repos_to_merge.txt | sed 's/^/- /'
+          echo ""
+          echo "To proceed, you must manually approve this step."
+          exit 1
+
+      - name: Merge main into pre_prod for all repos
+        env:
+          GITHUB_TOKEN: ${{ secrets.ORG_REPO_UPDATE_PAT }}
+        run: |
+          while IFS= read -r REPO; do
+            echo "=============================="
+            echo "Processing $REPO"
+            REPO_NAME=$(basename "$REPO")
+            if git clone "https://oauth2:${GITHUB_TOKEN}@github.com/${REPO}.git" "$REPO_NAME"; then
+              cd "$REPO_NAME"
+              if git show-ref --verify --quiet refs/heads/pre_prod; then
+                git checkout pre_prod
+                git pull origin pre_prod
+                if git pull origin main; then
+                  if git merge main --no-ff -m "Merge main into pre_prod (automated by workflow)"; then
+                    git push origin pre_prod
+                    echo "Successfully merged and pushed main to pre_prod in $REPO"
+                  else
+                    echo "::error::Merge conflict or error in $REPO. Manual intervention required."
+                    git merge --abort || true
+                  fi
+                else
+                  echo "::error::Failed to pull main in $REPO"
+                fi
+              else
+                echo "::warning::Branch 'pre_prod' does not exist in $REPO. Skipping."
+              fi
+              cd ..
+            else
+              echo "::error::Failed to clone $REPO"
             fi
-          done
-        else
-          REPOS_ARRAY=("${ALL_ORG_REPOS[@]}")
-        fi
-        
-        # Convertir el array de bash a un string JSON válido
-        # Utilizamos jq para un manejo robusto de JSON. Aseguramos que la salida sea un array JSON.
-        JSON_REPOS=$(printf '%s\n' "${REPOS_ARRAY[@]}" | jq -R . | jq -s .)
-        
-        echo "repos_json=$JSON_REPOS" >> $GITHUB_OUTPUT
-        echo "::notice::Repositories to process: $JSON_REPOS" # Log para depuración
-      shell: bash
-
-    - name: Confirm Operation (if not skipped)
-      if: github.event.inputs.skip_confirmation == false
-      run: |
-        # Usamos jq para pretty-print el JSON para la confirmación
-        echo "You are about to merge 'main' into 'pre_prod' for the following repositories:"
-        echo "${{ steps.all_repos_list.outputs.repos_json }}" | jq -r '.[] | "- " + .'
-        echo ""
-        echo "To proceed, you must manually approve this step."
-        echo "If you want to skip this confirmation for future runs, check 'Skip confirmation' when triggering."
-        exit 1 # This will cause the workflow to fail unless manually approved in the UI
-      shell: bash
-
-  # Este job se crea dinámicamente para cada repositorio
-  trigger_merge_for_each_repo:
-    needs: [define_and_trigger_merges] # Depende del job que define la lista de repos
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        # Ahora, repos_json ya es un array JSON válido, podemos usar fromJson directamente.
-        repository: ${{ fromJson(needs.define_and_trigger_merges.outputs.repos_json) }}
-    name: Merging ${{ matrix.repository }}
-    uses: ./.github/workflows/merge-main-to-pre-prod-reusable.yml@main # Referencia al workflow reusable
-    with:
-      target_repo: ${{ matrix.repository }}
-      source_branch: 'main'
-      target_branch: 'pre_prod'
-    secrets:
-      ORG_REPO_UPDATE_PAT: ${{ secrets.ORG_REPO_UPDATE_PAT }} # Pasa el secreto de la organización
+            echo "=============================="
+          done < repos_to_merge.txt
