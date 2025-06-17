@@ -8,7 +8,7 @@ on:
         required: true
         type: choice
         options:
-          - futbolemotion/running-zend-src
+          - running-zend-src
           - repo-2
           - repo-3
           - repo-4
