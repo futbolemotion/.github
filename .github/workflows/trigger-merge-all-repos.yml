@@ -63,7 +63,7 @@ jobs:
           target_repo: ${{ matrix.repository }}
           source_branch: 'main'
           target_branch: 'pre_prod'
-        secrets:
+        env:
           ORG_REPO_UPDATE_PAT: ${{ secrets.ORG_REPO_UPDATE_PAT }}
 
-# El job merge_main_to_pre_prod ahora llama al workflow reusable que ya maneja merge directo y PR automático en caso de conflicto.
+# Corrección: se usa 'env:' en vez de 'secrets:' para pasar el token a un workflow local reusable.
