@@ -58,7 +58,7 @@ jobs:
         repository: ${{ fromJson(needs.merge_all_repos.outputs.repos) }}
     steps:
       - name: Llamar workflow reusable para merge main -> pre_prod
-        uses: .github/workflows/merge-main-to-pre-prod-reusable.yml
+        uses: ./.github/workflows/merge-main-to-pre-prod-reusable.yml
         with:
           target_repo: ${{ matrix.repository }}
           source_branch: 'main'
