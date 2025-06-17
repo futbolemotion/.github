@@ -58,12 +58,12 @@ jobs:
         repository: ${{ fromJson(needs.merge_all_repos.outputs.repos) }}
     steps:
       - name: Llamar workflow reusable para merge main -> pre_prod
-        uses: ./workflows/merge-main-to-pre-prod-reusable.yml@main
+        uses: .github/workflows/merge-main-to-pre-prod-reusable.yml
         with:
           target_repo: ${{ matrix.repository }}
           source_branch: 'main'
           target_branch: 'pre_prod'
-        env:
+        secrets:
           ORG_REPO_UPDATE_PAT: ${{ secrets.ORG_REPO_UPDATE_PAT }}
 
-# Corrección: se usa 'env:' en vez de 'secrets:' para pasar el token a un workflow local reusable.
+# Ahora la referencia es correcta y el workflow reusable está en la ubicación estándar.
