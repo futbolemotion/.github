@@ -1,0 +1,36 @@
+name: Daily Merge main -> pre_prod
+
+on:
+  schedule:
+    - cron: '0 8 * * *'  # Todos los días a las 08:00 UTC
+  workflow_dispatch:     # Permite ejecutar manualmente también
+
+jobs:
+  merge-main-to-preprod:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout pre_prod branch
+        uses: actions/checkout@v4
+        with:
+          ref: pre_prod
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+
+      - name: Pull latest changes for both branches
+        run: |
+          git fetch origin main
+          git fetch origin pre_prod
+
+      - name: Merge main into pre_prod
+        run: |
+          git checkout pre_prod
+          git merge origin/main --no-ff --no-edit || echo "No se pudo hacer merge automáticamente."
+
+      - name: Push merge result to pre_prod
+        run: |
+          git push origin pre_prod
