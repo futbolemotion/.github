@@ -18,16 +18,16 @@ on:
 jobs:
   merge_all_repos:
     runs-on: ubuntu-latest
+    outputs:
+      repos: ${{ steps.all_repos_list.outputs.repos }}
     steps:
       - name: Define All Repositories
         id: all_repos_list
         run: |
           ALL_ORG_REPOS=(
-            
             "futbolemotion/running-zend-src"
             # Agrega aquí los otros 37 repositorios, uno por línea
           )
-
           REPOS_ARRAY=()
           if [ -n "${{ github.event.inputs.repos_to_update }}" ]; then
             IFS=',' read -ra SELECTED_INPUT_REPOS <<< "${{ github.event.inputs.repos_to_update }}"
@@ -47,48 +47,23 @@ jobs:
           else
             REPOS_ARRAY=("${ALL_ORG_REPOS[@]}")
           fi
+          printf '%s\n' "${REPOS_ARRAY[@]}" > repos_to_merge.txt
+          echo "repos=$(jq -R -s -c 'split("\n")[:-1]' repos_to_merge.txt)" >> $GITHUB_OUTPUT
 
-          printf "%s\n" "${REPOS_ARRAY[@]}" > repos_to_merge.txt
+  merge_main_to_pre_prod:
+    needs: merge_all_repos
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        repository: ${{ fromJson(needs.merge_all_repos.outputs.repos) }}
+    steps:
+      - name: Llamar workflow reusable para merge main -> pre_prod
+        uses: ./.github/workflows/merge-main-to-pre-prod-reusable.yml
+        with:
+          target_repo: ${{ matrix.repository }}
+          source_branch: 'main'
+          target_branch: 'pre_prod'
+        secrets:
+          ORG_REPO_UPDATE_PAT: ${{ secrets.ORG_REPO_UPDATE_PAT }}
 
-      - name: Confirm Operation (if not skipped)
-        if: github.event_name == 'workflow_dispatch' && github.event.inputs.skip_confirmation == 'false'
-        run: |
-          echo "You are about to merge 'main' into 'pre_prod' for the following repositories:"
-          cat repos_to_merge.txt | sed 's/^/- /'
-          echo ""
-          echo "To proceed, you must manually approve this step."
-          exit 1
-
-      - name: Merge main into pre_prod for all repos
-        env:
-          GITHUB_TOKEN: ${{ secrets.ORG_REPO_UPDATE_PAT }}
-        run: |
-          while IFS= read -r REPO; do
-            echo "=============================="
-            echo "Processing $REPO"
-            REPO_NAME=$(basename "$REPO")
-            if git clone "https://oauth2:${GITHUB_TOKEN}@github.com/${REPO}.git" "$REPO_NAME"; then
-              cd "$REPO_NAME"
-              if git show-ref --verify --quiet refs/heads/pre_prod; then
-                git checkout pre_prod
-                git pull origin pre_prod
-                if git pull origin main; then
-                  if git merge main --no-ff -m "Merge main into pre_prod (automated by workflow)"; then
-                    git push origin pre_prod
-                    echo "Successfully merged and pushed main to pre_prod in $REPO"
-                  else
-                    echo "::error::Merge conflict or error in $REPO. Manual intervention required."
-                    git merge --abort || true
-                  fi
-                else
-                  echo "::error::Failed to pull main in $REPO"
-                fi
-              else
-                echo "::warning::Branch 'pre_prod' does not exist in $REPO. Skipping."
-              fi
-              cd ..
-            else
-              echo "::error::Failed to clone $REPO"
-            fi
-            echo "=============================="
-          done < repos_to_merge.txt
+# El job merge_main_to_pre_prod ahora llama al workflow reusable que ya maneja merge directo y PR automático en caso de conflicto.

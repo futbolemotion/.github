@@ -106,3 +106,55 @@ jobs:
             exit 1 # Fail the job if merge conflicts
           fi
         shell: bash
+
+      - name: Intentar merge de main a pre_prod y crear PR si falla
+        id: merge_or_pr
+        working-directory: ${{ steps.repo_vars.outputs.REPO_NAME }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.ORG_REPO_UPDATE_PAT }}
+        run: |
+          SOURCE_BRANCH="${{ steps.repo_vars.outputs.SOURCE_BRANCH }}"
+          TARGET_BRANCH="${{ steps.repo_vars.outputs.TARGET_BRANCH }}"
+          REPO_FULL_NAME="${{ steps.repo_vars.outputs.REPO_FULL_NAME }}"
+          PR_BRANCH="auto/merge-main-into-pre_prod-$(date +%Y%m%d%H%M%S)"
+
+          # Verificar si la rama target existe
+          if ! git show-ref --verify --quiet refs/heads/"$TARGET_BRANCH"; then
+            echo "::warning::Branch '$TARGET_BRANCH' does not exist in $REPO_FULL_NAME. Skipping this repository."
+            echo "merge_result=skipped" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Hacer checkout a la rama target
+          git checkout "$TARGET_BRANCH"
+          git pull origin "$TARGET_BRANCH"
+
+          # Pull de la rama source
+          git fetch origin "$SOURCE_BRANCH"
+
+          # Intentar merge de source a target
+          if git merge origin/"$SOURCE_BRANCH" --no-ff -m "Merge $SOURCE_BRANCH into $TARGET_BRANCH (automated by workflow)"; then
+            echo "Merge successful. Pushing to origin/$TARGET_BRANCH..."
+            git push origin "$TARGET_BRANCH"
+            echo "merge_result=success" >> $GITHUB_OUTPUT
+          else
+            echo "::error::Merge conflicts detected or merge failed in $REPO_FULL_NAME. Creating PR."
+            git merge --abort
+            git checkout -b "$PR_BRANCH" "$TARGET_BRANCH"
+            git merge origin/"$SOURCE_BRANCH" --no-ff || true
+            git push origin "$PR_BRANCH"
+            echo "merge_result=pr" >> $GITHUB_OUTPUT
+            echo "pr_branch=$PR_BRANCH" >> $GITHUB_OUTPUT
+          fi
+        shell: bash
+
+      - name: Crear Pull Request si el merge falló
+        if: steps.merge_or_pr.outputs.merge_result == 'pr'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.ORG_REPO_UPDATE_PAT }}
+          commit-message: "Merge main into pre_prod (via PR, conflictos detectados)"
+          title: "Merge main into pre_prod (conflictos detectados)"
+          body: "Este PR fue creado automáticamente porque el merge directo de main a pre_prod falló. Por favor, resuelve los conflictos y haz merge manualmente."
+          base: ${{ steps.repo_vars.outputs.TARGET_BRANCH }}
+          branch: ${{ steps.merge_or_pr.outputs.pr_branch }}
