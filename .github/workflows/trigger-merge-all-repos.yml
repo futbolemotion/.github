@@ -24,6 +24,7 @@ jobs:
         run: |
           ALL_ORG_REPOS=(
             "futbolemotion/superadmin"
+            "futbolemotion/running-zend-src"
             # Agrega aquí los otros 37 repositorios, uno por línea
           )
 
