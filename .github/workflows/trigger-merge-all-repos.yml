@@ -63,7 +63,7 @@ jobs:
           target_repo: ${{ matrix.repository }}
           source_branch: 'main'
           target_branch: 'pre_prod'
-        secrets:
+        env:
           ORG_REPO_UPDATE_PAT: ${{ secrets.ORG_REPO_UPDATE_PAT }}
 
 # Ahora la referencia es correcta y el workflow reusable está en la ubicación estándar.
