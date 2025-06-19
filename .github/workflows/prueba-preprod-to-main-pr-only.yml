@@ -33,6 +33,7 @@ jobs:
         run: |
           echo "REPO_NAME=${{ github.event.inputs.repositories }}" >> $GITHUB_ENV
           echo "CLONE_URL=https://x-access-token:${{ secrets.ORG_REPO_UPDATE_PAT }}@github.com/${{ github.repository_owner }}/${{ github.event.inputs.repositories }}.git" >> $GITHUB_ENV
+          echo "PR_BRANCH=temp-preprod-to-main/$(date +%Y%m%d-%H%M%S)" >> $GITHUB_ENV
 
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -77,13 +78,21 @@ jobs:
             echo "✅ Se encontraron diferencias entre main y pre_prod. Creando PR..."
           fi
 
+      - name: Create temporary branch from pre_prod
+        if: env.DIFF_EXISTS == 'true'
+        run: |
+          git fetch origin pre_prod:refs/remotes/origin/pre_prod
+          git checkout -b ${{ env.PR_BRANCH }} origin/pre_prod
+          git push origin ${{ env.PR_BRANCH }}
+
       - name: Create pull request if differences exist
         if: env.DIFF_EXISTS == 'true'
         uses: peter-evans/create-pull-request@v7
         with:
           token: ${{ secrets.ORG_REPO_UPDATE_PAT }}
           base: main
-          branch: pre_prod
+          branch: ${{ env.PR_BRANCH }}
+          delete-branch: true
           title: "🔄 Merge pre_prod into main"
           body: |
             ## 📋 Descripción
