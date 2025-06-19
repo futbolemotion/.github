@@ -35,8 +35,8 @@ jobs:
           token: ${{ secrets.ORG_REPO_UPDATE_PAT }}
           fetch-depth: 0
 
-      - name: Check branches and create PR
-        id: create_pr
+      - name: Check branches and differences
+        id: check_diff
         run: |
           # Verificar que existan las ramas
           if ! git ls-remote --heads origin main | grep -q 'main'; then
@@ -64,39 +64,69 @@ jobs:
 
       - name: Create Pull Request
         if: env.CHANGES_EXIST == 'true'
-        uses: repo-sync/pull-request@v2
-        with:
-          source_branch: "pre_prod"
-          destination_branch: "main"
-          pr_title: "🔄 Merge pre_prod into main (${{ env.COMMIT_COUNT }} commits)"
-          pr_body: |
-            ## 📋 Descripción
-            Pull Request automático para mergear cambios de la rama `pre_prod` a `main`.
+        run: |
+          # Crear el PR usando la API de GitHub directamente
+          PR_BODY="## 📋 Descripción\nPull Request automático para mergear cambios de la rama \`pre_prod\` a \`main\`.\n\n## 🔄 Cambios incluidos\nEste PR incluye ${{ env.COMMIT_COUNT }} commits que están en \`pre_prod\` y no están en \`main\`.\n\n## 🧾 Detalles técnicos\n- Rama origen: \`pre_prod\`\n- Rama destino: \`main\`\n- Número de commits: ${{ env.COMMIT_COUNT }}\n\n## ✅ Checklist\n- [ ] Revisar los cambios incluidos\n- [ ] Verificar que no hay conflictos\n- [ ] Aprobar el merge si todo está correcto\n\n---\n*PR generado automáticamente por GitHub Actions*"
+          
+          PR_DATA=$(cat << EOF
+          {
+            "title": "🔄 Merge pre_prod into main (${{ env.COMMIT_COUNT }} commits)",
+            "body": "$PR_BODY",
+            "head": "pre_prod",
+            "base": "main"
+          }
+          EOF
+          )
+          
+          # Crear el PR
+          PR_RESPONSE=$(curl -L \
+            -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${{ secrets.ORG_REPO_UPDATE_PAT }}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            https://api.github.com/repos/${{ github.repository_owner }}/${{ github.event.inputs.repositories }}/pulls \
+            -d "$PR_DATA")
+          
+          # Extraer el número del PR
+          PR_NUMBER=$(echo "$PR_RESPONSE" | jq -r '.number')
+          
+          if [ "$PR_NUMBER" != "null" ]; then
+            echo "PR_NUMBER=$PR_NUMBER" >> $GITHUB_ENV
             
-            ## 🔄 Cambios incluidos
-            Este PR incluye ${{ env.COMMIT_COUNT }} commits que están en `pre_prod` y no están en `main`.
+            # Añadir labels
+            curl -L \
+              -X POST \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer ${{ secrets.ORG_REPO_UPDATE_PAT }}" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              https://api.github.com/repos/${{ github.repository_owner }}/${{ github.event.inputs.repositories }}/issues/$PR_NUMBER/labels \
+              -d '{"labels":["automated-pr","pre-prod-to-main","merge"]}'
             
-            ## 🧾 Detalles técnicos
-            - Rama origen: `pre_prod`
-            - Rama destino: `main`
-            - Número de commits: ${{ env.COMMIT_COUNT }}
+            # Añadir reviewer
+            curl -L \
+              -X POST \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer ${{ secrets.ORG_REPO_UPDATE_PAT }}" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              https://api.github.com/repos/${{ github.repository_owner }}/${{ github.event.inputs.repositories }}/pulls/$PR_NUMBER/requested_reviewers \
+              -d "{\"reviewers\":[\"${{ github.actor }}\"]}"
             
-            ## ✅ Checklist
-            - [ ] Revisar los cambios incluidos
-            - [ ] Verificar que no hay conflictos
-            - [ ] Aprobar el merge si todo está correcto
-            
-            ---
-            *PR generado automáticamente por GitHub Actions*
-          pr_reviewer: "${{ github.actor }}"
-          pr_label: "automated-pr,pre-prod-to-main,merge"
-          github_token: ${{ secrets.ORG_REPO_UPDATE_PAT }}
+            echo "✅ Pull Request #$PR_NUMBER creado exitosamente"
+          else
+            echo "❌ Error al crear el Pull Request"
+            echo "$PR_RESPONSE"
+            exit 1
+          fi
 
       - name: PR Creation Status
         run: |
           if [ "${{ env.CHANGES_EXIST }}" == "true" ]; then
-            echo "✅ Pull Request creado exitosamente de pre_prod a main"
-            echo "Número de commits incluidos: ${{ env.COMMIT_COUNT }}"
+            if [ -n "${{ env.PR_NUMBER }}" ]; then
+              echo "✅ Pull Request #${{ env.PR_NUMBER }} creado exitosamente de pre_prod a main"
+              echo "Número de commits incluidos: ${{ env.COMMIT_COUNT }}"
+            else
+              echo "❌ Error al crear el Pull Request"
+            fi
           else
             echo "ℹ️ No hay cambios para mergear de pre_prod a main"
           fi 
