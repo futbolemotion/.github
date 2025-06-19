@@ -40,6 +40,7 @@ jobs:
         with:
           repository: ${{ github.repository_owner }}/${{ github.event.inputs.repositories }}
           token: ${{ secrets.ORG_REPO_UPDATE_PAT }}
+          ref: pre_prod
           fetch-depth: 0
 
       - name: Configure Git
@@ -67,20 +68,35 @@ jobs:
       - name: Check for differences and prepare branch
         id: check_diff
         run: |
-          # Fetch both branches
+          # Asegurar que tenemos todas las ramas y commits
           git fetch origin main:refs/remotes/origin/main
           git fetch origin pre_prod:refs/remotes/origin/pre_prod
           
-          # Check for differences between main and pre_prod
-          if git diff --quiet origin/main origin/pre_prod; then
+          # Contar cuántos commits hay de diferencia
+          COMMIT_COUNT=$(git rev-list --count origin/main..origin/pre_prod)
+          echo "Número de commits diferentes entre main y pre_prod: $COMMIT_COUNT"
+          
+          if [ "$COMMIT_COUNT" -eq 0 ]; then
             echo "DIFF_EXISTS=false" >> $GITHUB_ENV
             echo "ℹ️ No hay diferencias entre main y pre_prod. No se necesita crear PR."
           else
             echo "DIFF_EXISTS=true" >> $GITHUB_ENV
-            # Create and push the temporary branch from pre_prod
+            echo "✅ Se encontraron $COMMIT_COUNT commits para mergear de pre_prod a main. Creando PR..."
+            
+            # Crear rama temporal desde pre_prod
             git checkout -b ${{ env.PR_BRANCH }} origin/pre_prod
-            git push origin ${{ env.PR_BRANCH }}
-            echo "✅ Se encontraron diferencias entre main y pre_prod. Creando PR..."
+            
+            # Verificar que la rama temporal tiene los commits correctos
+            TEMP_COMMIT_COUNT=$(git rev-list --count origin/main..${{ env.PR_BRANCH }})
+            echo "Commits en la rama temporal: $TEMP_COMMIT_COUNT"
+            
+            if [ "$TEMP_COMMIT_COUNT" -eq "$COMMIT_COUNT" ]; then
+              echo "✅ Rama temporal creada correctamente con todos los commits"
+              git push origin ${{ env.PR_BRANCH }}
+            else
+              echo "❌ Error: La rama temporal no tiene todos los commits necesarios"
+              exit 1
+            fi
           fi
 
       - name: Create pull request
@@ -98,6 +114,11 @@ jobs:
             
             ## 🔄 Cambios incluidos
             Este PR incluye todos los cambios que están en `pre_prod` y no están en `main`.
+            
+            ## 🧾 Detalles técnicos
+            - Rama base: `main`
+            - Rama origen: `pre_prod`
+            - Rama temporal: `${{ env.PR_BRANCH }}`
             
             ## ✅ Checklist
             - [ ] Revisar los cambios incluidos
