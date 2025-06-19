@@ -1,5 +1,5 @@
 # .github/workflows/merge_main_to_pre_prod_reusable.yml
-name: 🔩 Reusable Merge Main to Pre-Prod
+name: Reusable Merge Main to Pre-Prod
 
 on:
   workflow_call:

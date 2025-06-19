@@ -1,5 +1,5 @@
 # .github/workflows/trigger_merge_all_repos.yml
-name: 💿 Trigger Merge Main to Pre-Prod for All Repos
+name: Trigger Merge Main to Pre-Prod for All Repos
 
 on:
   schedule:
