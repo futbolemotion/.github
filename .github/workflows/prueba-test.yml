@@ -17,7 +17,7 @@ on:
           - atland
           - atland-vendor
           - superadmin
-          # Agrega los 38 repos de tu organización aquí
+          # Agrega los repos de la organización aquí
 
 jobs:
   merge-job:
