@@ -40,7 +40,6 @@ jobs:
         with:
           repository: ${{ github.repository_owner }}/${{ github.event.inputs.repositories }}
           token: ${{ secrets.ORG_REPO_UPDATE_PAT }}
-          ref: pre_prod
           fetch-depth: 0
 
       - name: Configure Git
@@ -48,8 +47,9 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Check if branches exist
+      - name: Check if branches exist and prepare
         run: |
+          # Verificar que existan las ramas
           MAIN_EXISTS=$(git ls-remote --heads origin main | wc -l)
           PREPROD_EXISTS=$(git ls-remote --heads origin pre_prod | wc -l)
           
@@ -64,15 +64,11 @@ jobs:
           fi
           
           echo "✅ Ambas ramas existen en el repositorio $REPO_NAME."
-
-      - name: Check for differences and prepare branch
-        id: check_diff
-        run: |
-          # Asegurar que tenemos todas las ramas y commits
-          git fetch origin main:refs/remotes/origin/main
-          git fetch origin pre_prod:refs/remotes/origin/pre_prod
           
-          # Contar cuántos commits hay de diferencia
+          # Asegurar que tenemos todas las ramas y commits
+          git fetch --all --prune
+          
+          # Verificar si hay commits para mergear
           COMMIT_COUNT=$(git rev-list --count origin/main..origin/pre_prod)
           echo "Número de commits diferentes entre main y pre_prod: $COMMIT_COUNT"
           
@@ -81,22 +77,35 @@ jobs:
             echo "ℹ️ No hay diferencias entre main y pre_prod. No se necesita crear PR."
           else
             echo "DIFF_EXISTS=true" >> $GITHUB_ENV
-            echo "✅ Se encontraron $COMMIT_COUNT commits para mergear de pre_prod a main. Creando PR..."
-            
-            # Crear rama temporal desde pre_prod
-            git checkout -b ${{ env.PR_BRANCH }} origin/pre_prod
-            
-            # Verificar que la rama temporal tiene los commits correctos
-            TEMP_COMMIT_COUNT=$(git rev-list --count origin/main..${{ env.PR_BRANCH }})
-            echo "Commits en la rama temporal: $TEMP_COMMIT_COUNT"
-            
-            if [ "$TEMP_COMMIT_COUNT" -eq "$COMMIT_COUNT" ]; then
-              echo "✅ Rama temporal creada correctamente con todos los commits"
-              git push origin ${{ env.PR_BRANCH }}
-            else
-              echo "❌ Error: La rama temporal no tiene todos los commits necesarios"
-              exit 1
-            fi
+            echo "COMMIT_COUNT=$COMMIT_COUNT" >> $GITHUB_ENV
+            echo "✅ Se encontraron $COMMIT_COUNT commits para mergear de pre_prod a main."
+          fi
+
+      - name: Create and prepare temporary branch
+        if: env.DIFF_EXISTS == 'true'
+        run: |
+          # Crear rama temporal desde pre_prod
+          git fetch origin pre_prod:refs/remotes/origin/pre_prod
+          git checkout -b ${{ env.PR_BRANCH }} origin/pre_prod
+          
+          # Verificar el estado actual
+          echo "Estado actual de la rama temporal:"
+          git status
+          
+          # Asegurar que tenemos todos los cambios
+          git pull origin pre_prod --no-rebase
+          
+          # Verificar que tenemos los commits correctos
+          TEMP_COMMITS=$(git rev-list --count origin/main..${{ env.PR_BRANCH }})
+          echo "Commits en la rama temporal después del pull: $TEMP_COMMITS"
+          
+          if [ "$TEMP_COMMITS" -eq "${{ env.COMMIT_COUNT }}" ]; then
+            echo "✅ Rama temporal sincronizada correctamente con pre_prod"
+            git push origin ${{ env.PR_BRANCH }}
+          else
+            echo "❌ Error: La rama temporal no tiene todos los commits necesarios"
+            echo "Esperados: ${{ env.COMMIT_COUNT }}, Actuales: $TEMP_COMMITS"
+            exit 1
           fi
 
       - name: Create pull request
@@ -107,18 +116,19 @@ jobs:
           base: main
           branch: ${{ env.PR_BRANCH }}
           delete-branch: false
-          title: "🔄 Merge pre_prod into main"
+          title: "🔄 Merge pre_prod into main (${{ env.COMMIT_COUNT }} commits)"
           body: |
             ## 📋 Descripción
             Pull Request automático para mergear cambios de la rama `pre_prod` a `main`.
             
             ## 🔄 Cambios incluidos
-            Este PR incluye todos los cambios que están en `pre_prod` y no están en `main`.
+            Este PR incluye ${{ env.COMMIT_COUNT }} commits que están en `pre_prod` y no están en `main`.
             
             ## 🧾 Detalles técnicos
             - Rama base: `main`
             - Rama origen: `pre_prod`
             - Rama temporal: `${{ env.PR_BRANCH }}`
+            - Número de commits a mergear: ${{ env.COMMIT_COUNT }}
             
             ## ✅ Checklist
             - [ ] Revisar los cambios incluidos
@@ -137,6 +147,7 @@ jobs:
         if: env.DIFF_EXISTS == 'true'
         run: |
           echo "✅ Pull Request creado exitosamente desde la rama ${{ env.PR_BRANCH }} a main"
+          echo "Número de commits incluidos: ${{ env.COMMIT_COUNT }}"
           echo "La rama temporal permanecerá hasta que el PR sea mergeado"
 
       - name: No changes needed
