@@ -40,6 +40,7 @@ jobs:
         with:
           repository: ${{ github.repository_owner }}/${{ github.event.inputs.repositories }}
           token: ${{ secrets.ORG_REPO_UPDATE_PAT }}
+          ref: main
           fetch-depth: 0
 
       - name: Configure Git
@@ -64,28 +65,25 @@ jobs:
           
           echo "✅ Ambas ramas existen en el repositorio $REPO_NAME."
 
-      - name: Check for differences
-        id: check_diff
+      - name: Fetch pre_prod and create temp branch
         run: |
-          git fetch origin pre_prod
+          # Fetch pre_prod branch
+          git fetch origin pre_prod:refs/remotes/origin/pre_prod
           
-          # Check if there are differences between main and pre_prod
-          if git diff --quiet origin/main origin/pre_prod; then
+          # Create and checkout new temp branch from pre_prod
+          git checkout -b ${{ env.PR_BRANCH }} origin/pre_prod
+          
+          # Check if there are differences between main and the new branch
+          if git diff --quiet origin/main HEAD; then
             echo "DIFF_EXISTS=false" >> $GITHUB_ENV
             echo "ℹ️ No hay diferencias entre main y pre_prod. No se necesita crear PR."
           else
             echo "DIFF_EXISTS=true" >> $GITHUB_ENV
+            git push origin ${{ env.PR_BRANCH }}
             echo "✅ Se encontraron diferencias entre main y pre_prod. Creando PR..."
           fi
 
-      - name: Create temporary branch from pre_prod
-        if: env.DIFF_EXISTS == 'true'
-        run: |
-          git fetch origin pre_prod:refs/remotes/origin/pre_prod
-          git checkout -b ${{ env.PR_BRANCH }} origin/pre_prod
-          git push origin ${{ env.PR_BRANCH }}
-
-      - name: Create pull request if differences exist
+      - name: Create pull request
         if: env.DIFF_EXISTS == 'true'
         uses: peter-evans/create-pull-request@v7
         with:
@@ -114,8 +112,9 @@ jobs:
             pre-prod-to-main
             merge
 
-      - name: No PR needed
+      - name: Clean up if no PR needed
         if: env.DIFF_EXISTS == 'false'
         run: |
+          git push origin --delete ${{ env.PR_BRANCH }} || true
           echo "ℹ️ No se creó Pull Request porque no hay diferencias entre main y pre_prod."
           echo "✅ El repositorio $REPO_NAME está actualizado." 
