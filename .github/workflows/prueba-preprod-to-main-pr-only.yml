@@ -40,7 +40,6 @@ jobs:
         with:
           repository: ${{ github.repository_owner }}/${{ github.event.inputs.repositories }}
           token: ${{ secrets.ORG_REPO_UPDATE_PAT }}
-          ref: main
           fetch-depth: 0
 
       - name: Configure Git
@@ -65,32 +64,34 @@ jobs:
           
           echo "✅ Ambas ramas existen en el repositorio $REPO_NAME."
 
-      - name: Fetch pre_prod and create temp branch
+      - name: Check for differences and prepare branch
+        id: check_diff
         run: |
-          # Fetch pre_prod branch
+          # Fetch both branches
+          git fetch origin main:refs/remotes/origin/main
           git fetch origin pre_prod:refs/remotes/origin/pre_prod
           
-          # Create and checkout new temp branch from pre_prod
-          git checkout -b ${{ env.PR_BRANCH }} origin/pre_prod
-          
-          # Check if there are differences between main and the new branch
-          if git diff --quiet origin/main HEAD; then
+          # Check for differences between main and pre_prod
+          if git diff --quiet origin/main origin/pre_prod; then
             echo "DIFF_EXISTS=false" >> $GITHUB_ENV
             echo "ℹ️ No hay diferencias entre main y pre_prod. No se necesita crear PR."
           else
             echo "DIFF_EXISTS=true" >> $GITHUB_ENV
+            # Create and push the temporary branch from pre_prod
+            git checkout -b ${{ env.PR_BRANCH }} origin/pre_prod
             git push origin ${{ env.PR_BRANCH }}
             echo "✅ Se encontraron diferencias entre main y pre_prod. Creando PR..."
           fi
 
       - name: Create pull request
         if: env.DIFF_EXISTS == 'true'
+        id: create-pr
         uses: peter-evans/create-pull-request@v7
         with:
           token: ${{ secrets.ORG_REPO_UPDATE_PAT }}
           base: main
           branch: ${{ env.PR_BRANCH }}
-          delete-branch: true
+          delete-branch: false
           title: "🔄 Merge pre_prod into main"
           body: |
             ## 📋 Descripción
@@ -112,9 +113,15 @@ jobs:
             pre-prod-to-main
             merge
 
-      - name: Clean up if no PR needed
+      - name: Show PR information
+        if: env.DIFF_EXISTS == 'true' && steps.create-pr.outputs.pull-request-number
+        run: |
+          echo "✅ Pull Request creado exitosamente!"
+          echo "Número de PR: ${{ steps.create-pr.outputs.pull-request-number }}"
+          echo "URL del PR: ${{ steps.create-pr.outputs.pull-request-url }}"
+
+      - name: No changes needed
         if: env.DIFF_EXISTS == 'false'
         run: |
-          git push origin --delete ${{ env.PR_BRANCH }} || true
-          echo "ℹ️ No se creó Pull Request porque no hay diferencias entre main y pre_prod."
+          echo "ℹ️ No hay diferencias entre main y pre_prod. No se necesita crear PR."
           echo "✅ El repositorio $REPO_NAME está actualizado." 
