@@ -31,17 +31,16 @@ jobs:
       - name: Set variables
         id: vars
         run: |
-          # Construye el nombre completo del repositorio usando el owner del contexto
-          echo "FULL_REPO_NAME=${{ github.repository_owner }}/${{ github.event.inputs.repository_name }}" >> $GITHUB_ENV
-          echo "REPO_SHORT_NAME=${{ github.event.inputs.repository_name }}" >> $GITHUB_ENV
+          echo "REPO_NAME=${{ github.event.inputs.repositories }}" >> $GITHUB_ENV
+          echo "CLONE_URL=https://x-access-token:${{ secrets.ORG_REPO_UPDATE_PAT }}@github.com/${{ github.repository_owner }}/${{ github.event.inputs.repositories }}.git" >> $GITHUB_ENV
           echo "PR_BRANCH=temp-preprod-to-main/$(date +%Y%m%d-%H%M%S)" >> $GITHUB_ENV
 
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          repository: ${{ env.FULL_REPO_NAME }}
+          repository: ${{ github.repository_owner }}/${{ github.event.inputs.repositories }}
           token: ${{ secrets.ORG_REPO_UPDATE_PAT }}
-          fetch-depth: 0 # Necesario para comparar ramas completas
+          fetch-depth: 0
 
       - name: Configure Git
         run: |
@@ -54,40 +53,38 @@ jobs:
           PREPROD_EXISTS=$(git ls-remote --heads origin pre_prod | wc -l)
           
           if [ "$MAIN_EXISTS" -eq 0 ]; then
-            echo "❌ La rama 'main' no existe en el repositorio $REPO_SHORT_NAME. Saliendo."
+            echo "❌ La rama 'main' no existe en el repositorio $REPO_NAME. Saliendo."
             exit 1
           fi
           
           if [ "$PREPROD_EXISTS" -eq 0 ]; then
-            echo "❌ La rama 'pre_prod' no existe en el repositorio $REPO_SHORT_NAME. Saliendo."
+            echo "❌ La rama 'pre_prod' no existe en el repositorio $REPO_NAME. Saliendo."
             exit 1
           fi
           
-          echo "✅ Ambas ramas existen en el repositorio $REPO_SHORT_NAME."
+          echo "✅ Ambas ramas existen en el repositorio $REPO_NAME."
 
       - name: Check for differences and prepare branch
         id: check_diff
         run: |
-          # Fetch all refs to ensure up-to-date local knowledge of remote branches
-          git fetch origin
+          # Fetch both branches
+          git fetch origin main:refs/remotes/origin/main
+          git fetch origin pre_prod:refs/remotes/origin/pre_prod
           
-          # Check if pre_prod is ahead of main
-          if [ -z "$(git log origin/main..origin/pre_prod --oneline)" ]; then
-            echo "AHEAD_EXISTS=false" >> $GITHUB_ENV
-            echo "ℹ️ La rama 'pre_prod' no tiene commits por delante de 'main'. No se necesita crear PR."
+          # Check for differences between main and pre_prod
+          if git diff --quiet origin/main origin/pre_prod; then
+            echo "DIFF_EXISTS=false" >> $GITHUB_ENV
+            echo "ℹ️ No hay diferencias entre main y pre_prod. No se necesita crear PR."
           else
-            echo "AHEAD_EXISTS=true" >> $GITHUB_ENV
+            echo "DIFF_EXISTS=true" >> $GITHUB_ENV
             # Create and push the temporary branch from pre_prod
-            # Asegurarse de estar en la rama correcta antes de crear la temporal
-            git checkout origin/pre_prod
-            git branch ${{ env.PR_BRANCH }}
+            git checkout -b ${{ env.PR_BRANCH }} origin/pre_prod
             git push origin ${{ env.PR_BRANCH }}
-            echo "✅ 'pre_prod' tiene commits por delante de 'main'. Creando PR..."
+            echo "✅ Se encontraron diferencias entre main y pre_prod. Creando PR..."
           fi
 
       - name: Create pull request
-        if: env.AHEAD_EXISTS == 'true'
-        id: create-pr
+        if: env.DIFF_EXISTS == 'true'
         uses: peter-evans/create-pull-request@v7
         with:
           token: ${{ secrets.ORG_REPO_UPDATE_PAT }}
@@ -109,21 +106,20 @@ jobs:
             
             ---
             *PR generado automáticamente por GitHub Actions*
-          reviewers: ${{ github.actor }} # Asigna al usuario que dispara el workflow
+          reviewers: ${{ github.actor }}
           labels: |
             automated-pr
             pre-prod-to-main
             merge
 
-      - name: Show PR information
-        if: env.AHEAD_EXISTS == 'true' && steps.create-pr.outputs.pull-request-number
+      - name: Verify pull request creation
+        if: env.DIFF_EXISTS == 'true'
         run: |
-          echo "✅ Pull Request creado exitosamente!"
-          echo "Número de PR: ${{ steps.create-pr.outputs.pull-request-number }}"
-          echo "URL del PR: ${{ steps.create-pr.outputs.pull-request-url }}"
+          echo "✅ Pull Request creado exitosamente desde la rama ${{ env.PR_BRANCH }} a main"
+          echo "La rama temporal permanecerá hasta que el PR sea mergeado"
 
       - name: No changes needed
-        if: env.AHEAD_EXISTS == 'false'
+        if: env.DIFF_EXISTS == 'false'
         run: |
-          echo "ℹ️ 'pre_prod' no tiene commits por delante de 'main'. No se necesita crear PR."
-          echo "✅ El repositorio ${{ env.FULL_REPO_NAME }} está actualizado (main está al día con pre_prod o viceversa)."
+          echo "ℹ️ No se creó Pull Request porque no hay diferencias entre main y pre_prod."
+          echo "✅ El repositorio $REPO_NAME está actualizado." 
