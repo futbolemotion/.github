@@ -2,8 +2,8 @@
 name: Trigger Merge Main to Pre-Prod for All Repos
 
 on:
-  schedule:
-    - cron: '0 8 * * *' # Todos los días a las 8am UTC
+  # schedule:
+  #   - cron: '0 8 * * *' # Todos los días a las 8am UTC
   workflow_dispatch:
     inputs:
       repos_to_update:
