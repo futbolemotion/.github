@@ -43,6 +43,12 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           branches: ${{ github.event.pull_request.head.ref }}
       
+      - name: Call reusable workflow for cleanup
+        if: steps.check-protection.outputs.protected == 'false'
+        uses: ./.github/workflows/delete-merged-branches.yml
+        with:
+          protected_branches: 'main,pre_prod,Qa_test,Qa,qa,QA'
+      
       - name: Log protected branch
         if: steps.check-protection.outputs.protected == 'true'
         run: |
