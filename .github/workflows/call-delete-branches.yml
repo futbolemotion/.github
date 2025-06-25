@@ -17,3 +17,6 @@ jobs:
     with:
       protected_branches: 'main,pre_prod,Qa_test,Qa,qa,QA'
     secrets: inherit
+
+
+    
