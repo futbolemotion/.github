@@ -45,9 +45,10 @@ jobs:
       
       - name: Call reusable workflow for cleanup
         if: steps.check-protection.outputs.protected == 'false'
-        uses: ./.github/workflows/delete-merged-branches.yml
+        uses: futbolemotion/.github/.github/workflows/delete-merged-branches.yml@main
         with:
           protected_branches: 'main,pre_prod,Qa_test,Qa,qa,QA'
+        secrets: inherit
       
       - name: Log protected branch
         if: steps.check-protection.outputs.protected == 'true'
