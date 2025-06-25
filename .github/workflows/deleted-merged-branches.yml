@@ -1,4 +1,4 @@
-name: Delete Merged Branches
+name: 🗑️ Delete Merged Branches
 
 on:
   workflow_call:
