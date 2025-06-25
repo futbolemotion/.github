@@ -2,6 +2,17 @@ name: Delete Merged Branches
 
 on:
   workflow_call:
+    inputs:
+      protected_branches:
+        description: 'Comma-separated list of protected branches'
+        required: false
+        default: 'main,pre_prod,Qa_test,qa,QA'
+        type: string
+      target_branches:
+        description: 'Comma-separated list of target branches that trigger deletion'
+        required: false
+        default: 'main,pre_prod,Qa_test,qa,QA'
+        type: string
 
 jobs:
   delete-merged-branches:
@@ -28,14 +39,15 @@ jobs:
           
           echo "🔍 Checking PR: $BRANCH_NAME → $TARGET_BRANCH"
           
-          # Lista de ramas protegidas que NUNCA se deben borrar
-          PROTECTED_BRANCHES="main master pre_prod qa_test QA qa develop staging production"
+          # Convert comma-separated strings to arrays
+          IFS=',' read -ra PROTECTED_BRANCHES <<< "${{ inputs.protected_branches }}"
+          IFS=',' read -ra TARGET_BRANCHES <<< "${{ inputs.target_branches }}"
           
-          # Lista de ramas objetivo que activan la eliminación
-          TARGET_BRANCHES="main master pre_prod qa_test QA qa"
+          echo "🛡️  Protected branches: ${PROTECTED_BRANCHES[*]}"
+          echo "🎯 Target branches that trigger deletion: ${TARGET_BRANCHES[*]}"
           
           # Verificar si la rama está protegida
-          for protected in $PROTECTED_BRANCHES; do
+          for protected in "${PROTECTED_BRANCHES[@]}"; do
             if [[ "$BRANCH_NAME" == "$protected" ]]; then
               echo "❌ Branch '$BRANCH_NAME' is protected, skipping deletion"
               exit 0
@@ -43,7 +55,7 @@ jobs:
           done
           
           # Verificar si el target branch activa la eliminación
-          for target in $TARGET_BRANCHES; do
+          for target in "${TARGET_BRANCHES[@]}"; do
             if [[ "$TARGET_BRANCH" == "$target" ]]; then
               echo "✅ Target branch '$TARGET_BRANCH' triggers deletion"
               
@@ -69,3 +81,5 @@ jobs:
           echo "- **Branch:** ${{ github.event.pull_request.head.ref }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Target:** ${{ github.event.pull_request.base.ref }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Status:** ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Protected Branches:** ${{ inputs.protected_branches }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Target Branches:** ${{ inputs.target_branches }}" >> $GITHUB_STEP_SUMMARY

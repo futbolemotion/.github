@@ -13,9 +13,10 @@ jobs:
   call-delete-merged-branches:
     # Solo ejecutar si el PR fue mergeado (no solo cerrado)
     if: github.event.pull_request.merged == true
-    uses: futbolemotion/.github/.github/workflows/delete-merged-branches.yml@main
+    uses: futbolemotion/.github/.github/workflows/deleted-merged-branches.yml@main
     with:
-      protected_branches: 'main,pre_prod,Qa_test,Qa,qa,QA'
+      protected_branches: 'main,pre_prod,Qa_test,qa,QA'
+      target_branches: 'main,pre_prod,Qa_test,qa,QA'
     secrets: inherit
 
 
