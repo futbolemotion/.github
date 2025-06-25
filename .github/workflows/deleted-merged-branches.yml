@@ -1,0 +1,71 @@
+name: Delete Merged Branches
+
+on:
+  workflow_call:
+
+jobs:
+  delete-merged-branches:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Git configuration
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Delete merged branch
+        run: |
+          # Get branch name and target branch
+          BRANCH_NAME="${{ github.event.pull_request.head.ref }}"
+          TARGET_BRANCH="${{ github.event.pull_request.base.ref }}"
+          
+          echo "🔍 Checking PR: $BRANCH_NAME → $TARGET_BRANCH"
+          
+          # Lista de ramas protegidas que NUNCA se deben borrar
+          PROTECTED_BRANCHES="main master pre_prod qa_test QA qa develop staging production"
+          
+          # Lista de ramas objetivo que activan la eliminación
+          TARGET_BRANCHES="main master pre_prod qa_test QA qa"
+          
+          # Verificar si la rama está protegida
+          for protected in $PROTECTED_BRANCHES; do
+            if [[ "$BRANCH_NAME" == "$protected" ]]; then
+              echo "❌ Branch '$BRANCH_NAME' is protected, skipping deletion"
+              exit 0
+            fi
+          done
+          
+          # Verificar si el target branch activa la eliminación
+          for target in $TARGET_BRANCHES; do
+            if [[ "$TARGET_BRANCH" == "$target" ]]; then
+              echo "✅ Target branch '$TARGET_BRANCH' triggers deletion"
+              
+              # Verificar si la rama existe remotamente
+              if git ls-remote --heads origin "$BRANCH_NAME" | grep -q "$BRANCH_NAME"; then
+                echo "🗑️  Deleting branch '$BRANCH_NAME'"
+                git push origin --delete "$BRANCH_NAME"
+                echo "✅ Successfully deleted branch '$BRANCH_NAME'"
+              else
+                echo "ℹ️  Branch '$BRANCH_NAME' doesn't exist remotely or was already deleted"
+              fi
+              exit 0
+            fi
+          done
+          
+          echo "⚠️  Target branch '$TARGET_BRANCH' doesn't trigger deletion, skipping"
+
+      - name: Create summary
+        if: always()
+        run: |
+          echo "## Branch Deletion Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Repository:** ${{ github.repository }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch:** ${{ github.event.pull_request.head.ref }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Target:** ${{ github.event.pull_request.base.ref }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status:** ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
