@@ -130,3 +130,79 @@ jobs:
           else
             echo "ℹ️ No hay cambios para mergear de pre_prod a main"
           fi
+
+      - name: Generate Job Summary
+        if: always()
+        run: |
+          echo "## 📊 Resumen del Workflow - PR pre_prod → main" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Información del repositorio
+          echo "### 🏗️ Información del Repositorio" >> $GITHUB_STEP_SUMMARY
+          echo "- **Repositorio seleccionado:** \`${{ github.event.inputs.repositories }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Ejecutado por:** \`${{ github.actor }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Fecha de ejecución:** \`$(date '+%Y-%m-%d %H:%M:%S UTC')\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ env.CHANGES_EXIST }}" == "true" ]; then
+            if [ -n "${{ env.PR_NUMBER }}" ]; then
+              # Información del PR creado
+              echo "### ✅ Pull Request Creado Exitosamente" >> $GITHUB_STEP_SUMMARY
+              echo "- **Número de PR:** [#${{ env.PR_NUMBER }}](https://github.com/${{ github.repository_owner }}/${{ github.event.inputs.repositories }}/pull/${{ env.PR_NUMBER }})" >> $GITHUB_STEP_SUMMARY
+              echo "- **Título:** 🔄 Merge pre_prod into main (${{ env.COMMIT_COUNT }} commits)" >> $GITHUB_STEP_SUMMARY
+              echo "- **Rama origen:** \`pre_prod\`" >> $GITHUB_STEP_SUMMARY
+              echo "- **Rama destino:** \`main\`" >> $GITHUB_STEP_SUMMARY
+              echo "- **Número de commits:** ${{ env.COMMIT_COUNT }}" >> $GITHUB_STEP_SUMMARY
+              echo "- **Labels aplicados:** \`automated-pr\`, \`pre-prod-to-main\`, \`merge\`" >> $GITHUB_STEP_SUMMARY
+              echo "- **Assignee:** \`${{ github.actor }}\`" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              
+              # Detalles de los commits
+              echo "### 📝 Detalles de los Commits" >> $GITHUB_STEP_SUMMARY
+              echo "Commits que están en \`pre_prod\` y no están en \`main\`:" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              
+              # Obtener la lista de commits
+              git fetch origin main pre_prod
+              COMMITS=$(git log --oneline --no-merges origin/main..origin/pre_prod)
+              
+              if [ -n "$COMMITS" ]; then
+                echo '```' >> $GITHUB_STEP_SUMMARY
+                echo "$COMMITS" >> $GITHUB_STEP_SUMMARY
+                echo '```' >> $GITHUB_STEP_SUMMARY
+              else
+                echo "> No se pudieron obtener los detalles de los commits" >> $GITHUB_STEP_SUMMARY
+              fi
+              echo "" >> $GITHUB_STEP_SUMMARY
+              
+              # Información adicional del PR
+              echo "### 🔗 Enlaces Útiles" >> $GITHUB_STEP_SUMMARY
+              echo "- [Ver Pull Request](https://github.com/${{ github.repository_owner }}/${{ github.event.inputs.repositories }}/pull/${{ env.PR_NUMBER }})" >> $GITHUB_STEP_SUMMARY
+              echo "- [Comparar cambios](https://github.com/${{ github.repository_owner }}/${{ github.event.inputs.repositories }}/compare/main...pre_prod)" >> $GITHUB_STEP_SUMMARY
+              echo "- [Repositorio](https://github.com/${{ github.repository_owner }}/${{ github.event.inputs.repositories }})" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              
+              # Estado del workflow
+              echo "### 🎯 Estado del Workflow" >> $GITHUB_STEP_SUMMARY
+              echo "✅ **ÉXITO** - El Pull Request se creó correctamente" >> $GITHUB_STEP_SUMMARY
+              
+            else
+              echo "### ❌ Error en la Creación del PR" >> $GITHUB_STEP_SUMMARY
+              echo "No se pudo crear el Pull Request. Revisa los logs anteriores para más detalles." >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "### 🎯 Estado del Workflow" >> $GITHUB_STEP_SUMMARY
+              echo "❌ **FALLO** - Error al crear el Pull Request" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "### ℹ️ Sin Cambios para Mergear" >> $GITHUB_STEP_SUMMARY
+            echo "No hay commits en la rama \`pre_prod\` que no estén ya en \`main\`." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Razón:** Las ramas \`pre_prod\` y \`main\` están sincronizadas." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### 🎯 Estado del Workflow" >> $GITHUB_STEP_SUMMARY
+            echo "ℹ️ **COMPLETADO** - No se requieren acciones adicionales" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "*Resumen generado automáticamente por GitHub Actions*" >> $GITHUB_STEP_SUMMARY
