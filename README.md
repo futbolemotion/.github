@@ -38,6 +38,7 @@ Este repositorio contiene un conjunto de **GitHub Actions Workflows** diseñados
 - 🔄 **Gestión centralizada** de múltiples repositorios
 - 🛡️ **Protección de ramas** críticas
 - 📋 **Templates estandarizados** para Pull Requests
+- 🤖 **Triggers automáticos** para sincronización de ramas
 
 ---
 
@@ -66,6 +67,11 @@ graph TD
     R --> S{Merge exitoso?}
     S -->|Sí| T[Push directo]
     S -->|No| U[Crear PR manual]
+    
+    V[PR mergeado a main] --> W[merge-main-to-pre-prod.yml]
+    W --> X{Merge automático exitoso?}
+    X -->|Sí| Y[Push a pre_prod]
+    X -->|No| Z[Crear PR para conflictos]
 ```
 
 ---
@@ -99,6 +105,7 @@ uses: futbolemotion/.github/.github/workflows/deleted-merged-branches.yml@main
   - Verifica ramas protegidas antes de eliminar
   - Solo elimina si el target branch está en la lista permitida
   - Genera resumen detallado de la operación
+  - Verifica existencia remota de la rama antes de eliminar
 
 **🔍 Lógica de Eliminación:**
 ```bash
@@ -109,6 +116,7 @@ main, pre_prod, Qa_test, qa, QA
 # 1. La rama NO está protegida
 # 2. El target branch SÍ está en la lista
 # 3. La rama existe remotamente
+# 4. El PR fue mergeado (no solo cerrado)
 ```
 
 ---
@@ -119,33 +127,45 @@ main, pre_prod, Qa_test, qa, QA
 - **🕐 Trigger:** Manual (workflow_dispatch)
 - **🎯 Propósito:** Crea Pull Requests para mergear cambios de `pre_prod` a `main`
 - **✨ Características:**
-  - Verifica diferencias entre ramas
-  - Crea PRs con información detallada
+  - Verifica diferencias entre ramas antes de crear PR
+  - Crea PRs con información detallada y número de commits
   - Añade labels y assignees automáticamente
   - Solo crea PR si hay cambios pendientes
+  - Genera resumen completo con detalles de commits
 
 **📋 Información del PR generado:**
 - Título descriptivo con número de commits
-- Body detallado con checklist
+- Body detallado con checklist y información técnica
 - Labels: `automated-pr`, `pre-prod-to-main`, `merge`
 - Assignee: Usuario que ejecutó el workflow
+- Resumen de commits incluidos
 
 ---
 
 ### ⚙️ **merge-main-to-pre-prod.yml**
 **Función:** Merge automático de main a pre_prod
 
-- **🕐 Trigger:** Manual (workflow_dispatch)
+- **🕐 Trigger:** Manual (workflow_dispatch) + Automático (PR mergeado a main)
 - **🎯 Propósito:** Mergea cambios de `main` a `pre_prod`
 - **🔄 Comportamiento:**
   - Intenta merge directo si no hay conflictos
   - Crea PR automático si hay conflictos
   - Verifica existencia de ramas antes de proceder
+  - Se ejecuta automáticamente cuando se mergea un PR a main
 
 **🎯 Casos de Uso:**
-- Sincronización de cambios de producción a pre-producción
+- Sincronización automática de cambios de producción a pre-producción
 - Actualización de dependencias y configuraciones
 - Propagación de hotfixes
+- Mantenimiento de sincronización entre ramas
+
+**🆕 Nuevo Trigger Automático:**
+```yaml
+# Se ejecuta automáticamente cuando se mergea un PR a main
+pull_request:
+  types: [closed]
+  branches: [main]
+```
 
 ---
 
@@ -157,7 +177,8 @@ main, pre_prod, Qa_test, qa, QA
 - **🔄 Comportamiento:**
   - Intenta merge directo si no hay conflictos
   - Crea PR automático si hay conflictos
-  - Añade reviewer automáticamente
+  - Añade reviewer automáticamente (usuario que ejecutó el workflow)
+  - Verifica existencia de ramas antes de proceder
 
 **🎯 Casos de Uso:**
 - Promoción de features probadas a producción
@@ -175,6 +196,7 @@ main, pre_prod, Qa_test, qa, QA
    ORG_REPO_UPDATE_PAT
    ```
    - Token con permisos de escritura en repositorios de la organización
+   - Debe tener permisos para crear PRs y hacer push
 
 2. **🛡️ Permisos Requeridos:**
    - `contents: write`
@@ -184,8 +206,9 @@ main, pre_prod, Qa_test, qa, QA
 
 #### Workflows Automáticos
 ```bash
-# Se ejecutan automáticamente al cerrar PRs
-# No requiere intervención manual
+# Se ejecutan automáticamente:
+# - Al cerrar PRs (limpieza de ramas)
+# - Al mergear PRs a main (sincronización a pre_prod)
 ```
 
 #### Workflows Manuales
@@ -196,6 +219,18 @@ main, pre_prod, Qa_test, qa, QA
 # 4. Seleccionar el repositorio
 # 5. Ejecutar
 ```
+
+### 📋 Template de Pull Request
+
+El proyecto incluye un template estandarizado para Pull Requests que incluye:
+
+- **📋 Descripción** del cambio
+- **🔗 Enlaces** a tickets relacionados
+- **💡 Sugerencias** para revisión
+- **🧾 Tipo de cambio** (Bugfix, Feature, Refactor, etc.)
+- **📸 Screenshots** (si aplica)
+- **📍 Áreas de impacto** del cambio
+- **✅ Checklist** de verificación
 
 ---
 
@@ -228,10 +263,18 @@ protected_branches: 'main,pre_prod,Qa_test,qa,QA'
 - ❌ No se pueden eliminar ramas protegidas
 - ❌ No se pueden hacer push directo a ramas principales
 - ✅ Solo merges a través de PRs aprobados
+- ✅ Verificación de existencia de ramas antes de operaciones
 
 ### 🔑 Tokens y Secretos
 - `ORG_REPO_UPDATE_PAT`: Token con permisos de organización
 - Configuración de usuario para commits automáticos
+- Permisos específicos para cada operación
+
+### 🛡️ Validaciones de Seguridad
+- Verificación de ramas protegidas antes de eliminación
+- Validación de existencia de ramas antes de merges
+- Control de permisos por operación
+- Logs detallados para auditoría
 
 ---
 
@@ -242,17 +285,18 @@ protected_branches: 'main,pre_prod,Qa_test,qa,QA'
 #### 1. **Workflow no se ejecuta**
 ```bash
 # Verificar:
-- Permisos del token
+- Permisos del token ORG_REPO_UPDATE_PAT
 - Configuración del trigger
 - Estado del repositorio
+- Existencia de las ramas requeridas
 ```
 
 #### 2. **Merge falla por conflictos**
 ```bash
 # Solución:
-- Se crea PR automáticamente
-- Resolver conflictos manualmente
-- Aprobar y mergear el PR
+- Se crea PR automáticamente para resolución manual
+- Revisar conflictos en el PR generado
+- Resolver conflictos y aprobar el merge
 ```
 
 #### 3. **Rama no se elimina**
@@ -261,13 +305,34 @@ protected_branches: 'main,pre_prod,Qa_test,qa,QA'
 - ¿La rama está protegida?
 - ¿El target branch activa eliminación?
 - ¿La rama existe remotamente?
+- ¿El PR fue mergeado (no solo cerrado)?
+```
+
+#### 4. **Error de permisos**
+```bash
+# Verificar:
+- Token ORG_REPO_UPDATE_PAT tiene permisos correctos
+- Usuario tiene acceso al repositorio
+- Configuración de permisos en el workflow
 ```
 
 ### 🔍 Logs y Debugging
 ```bash
 # Ver logs detallados en:
 GitHub Actions > [Workflow] > [Job] > [Step]
+
+# Información disponible:
+- Resumen del job con detalles completos
+- Estado de cada operación
+- Enlaces a PRs creados
+- Detalles de commits incluidos
 ```
+
+### 📊 Monitoreo
+- **Resúmenes automáticos** en cada ejecución
+- **Enlaces directos** a PRs creados
+- **Detalles de commits** incluidos en cada operación
+- **Estado de ejecución** con información contextual
 
 ---
 
@@ -282,12 +347,12 @@ GitHub Actions > [Workflow] > [Job] > [Step]
 
 - **Email:** monshy.tinoco@futbolemotion.com - juanpablo.lopez@sportsemotion.com
 
-
 ### 📚 Documentación Adicional
 
 - [GitHub Actions Documentation](https://docs.github.com/en/actions)
 - [Workflow Syntax](https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions)
 - [Security Best Practices](https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions)
+- [Pull Request Templates](https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/creating-a-pull-request-template-for-your-repository)
 
 ---
 
